@@ -119,9 +119,33 @@ int main (int argc, char *argv[]) {
 					strcat(completeKey, buffer);
 				}
 
-				send(estConnFD, "all data received", 17, 0);
-				printf("SERVER: Plaintext: %d bytes\nKey: %d byte\n", strlen(completePlain), strlen(completeKey));
-				
+				// Create cipher, using completePlain to store the result since we know
+				// it's big enough.
+				// Cipher is created character-by-character. First, it converts spaces to [
+				// (91) for math purposes. It then converts both plaintext and key to our
+				// base number (0-26). It adds those together, mods them by 27, converts
+				// back to uppercase, and stores that in completePlain.
+				// After, it converts ] to spaces.
+				// It leaves the @@ at the end for sending back.
+				for (i = 0; i < strlen(completePlain)-2; i++) {
+					if (completePlain[i] == 32) completePlain[i] = 91;
+					if (completeKey[i] == 32) completeKey[i] = 91;
+					completePlain[i] = ((completePlain[i]-65+completeKey[i]-65) % 27) + 65;
+					if (completePlain[i] == 91) completePlain[i] = 32;
+				}
+
+				// Send cipher back, breaking up the complete message to buffer-sized chunks,
+				// not stopping until all the data has been written.
+				charsWritten = 0;
+				do {
+					memset(buffer, '\0', sizeof(buffer));
+					strncpy(buffer, &completePlain[charsWritten], sizeof(buffer)-1);
+					charsWritten += send(estConnFD, buffer, strlen(buffer), 0);
+				} while (charsWritten < strlen(completePlain));
+
+				// Now that the cipher is sent, connection can be closed and child offers
+				// itself up for reaping.
+				close(estConnFD);
 
 
 /* demo data

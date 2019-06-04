@@ -113,11 +113,21 @@ int main(int argc, char *argv[]) {
 		charsWritten += send(socketFD, buffer, strlen(buffer), 0);
 	} while(charsWritten < strlen(inKey));
 
-	memset(buffer, '\0', sizeof(buffer));
-	recv(socketFD, buffer, sizeof(buffer)-1, 0);
-	printf("CLIENT: from server: %s\n", buffer);
+	// Receive cipher; Uses 'inPlain' string because we know it's already large enough to hold the cipher.
+	memset(inPlain, '\0', sizeof(inPlain));
+	while (strstr(inPlain, "@@") == NULL) {
+		memset(buffer, '\0', sizeof(buffer));
+		recv(socketFD, buffer, sizeof(buffer)-1, 0);
+		strcat(inPlain, buffer);
+	}
 
+	// Replace @'s with newline and \0
+	inPlain[numPlain-1] = '\n';
+	inPlain[numPlain] = '\0';
+	// Print cipher to stdout
+	fprintf(stdout, inPlain);
 
+	close(socketFD);
 /* demo data
 	// send message
 	charsWritten = send(socketFD, buffer, strlen(buffer), 0);
