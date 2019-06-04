@@ -28,34 +28,40 @@ int main(int argc, char *argv[]) {
 	char* inPlain = NULL;
 	char* inKey = NULL;
 	size_t inputSize = 0;
+	int numPlain, numKey;
 	int i;
 
 	if (argc != 4) { fprintf(stderr, "USAGE: %s plaintext key port\n", argv[0]); exit(1); } // Check usage/args
 
 /************** String retrieval ************************/
 	FILE* fp = fopen(argv[1], "r");
-	charsRead = getline(&inPlain, &inputSize, fp);	// Read plaintext file
+	numPlain = getline(&inPlain, &inputSize, fp);	// Read plaintext file
 	fclose(fp);
 	// Check for bad characters. Goes to charsRead-1 to ignore newline.
-	for (i = 0; i < charsRead-1; i++){
+	for (i = 0; i < numPlain-1; i++){
 		if ((inPlain[i] < 65 || inPlain[i] > 90) && inPlain[i] != 32) {
 			error("Bad character in plaintext");
 		}
 	}
 	// Modify the text to have @@ as a terminator
-	inPlain[charsRead-1] = '@';
-	inPlain[charsRead] = '@';
-	inPlain[charsRead+1] = '\0';
+	inPlain[numPlain-1] = '@';
+	inPlain[numPlain] = '@';
+	inPlain[numPlain+1] = '\0';
 
 	// Repeat for key
 	fp = fopen(argv[2], "r");
-	charsRead = getline(&inKey, &inputSize, fp);
+	numKey = getline(&inKey, &inputSize, fp);
 	fclose(fp);
-	for (i = 0; i < charsRead-1; i++) {
+	if (numPlain > numKey) error("ERROR: plaintext longer than key");	// Verify longer key than text
+	for (i = 0; i < numKey-1; i++) {
 		if ((inKey[i] < 65 || inKey[i] > 90) && inKey[i] != 32) {
 			error("Bad character in key");
 		}
 	}
+	inKey[numKey-1] = '@';
+	inKey[numKey] = '@';
+	inKey[numKey+1] = '\0';
+
 
 /************** Network Connection **********************/
 
@@ -76,13 +82,43 @@ int main(int argc, char *argv[]) {
 	if (connect(socketFD, (struct sockaddr*)&serverAddress, sizeof(serverAddress)) < 0) //Connect socket to addy
 		error("ERROR connecting");
 
-// demo data
-// 	// get input from user
-	printf("Client: enter text: ");
+/*************** Verify connection to correct server ********/
+	charsWritten = send(socketFD, "secret", 6, 0);
 	memset(buffer, '\0', sizeof(buffer));
-	fgets(buffer, sizeof(buffer) - 1, stdin);
-	buffer[strcspn(buffer, "\n")] = '\0'; //remove trailing \n
+	charsRead = recv(socketFD, buffer, sizeof(buffer)-1, 0);
+	if (strcmp(buffer, "confirm") != 0) error ("ERROR connected to wrong server");
 
+
+/**************** Send plaintext and key ********************/
+	// Send plaintext
+	charsWritten = 0;	// Set to 0 before loop
+	do {
+		// Send the remaining data (or try to send all of it if first go through).
+		// &inPlain[charsWritten] gives us the address of the remaining string - either
+		// &inPlain[0] to begin, or wherever it stopped if it go interrupted.
+		// Only sends the size of the buffer each time, so larger messages are broken up.
+		memset(buffer, '\0', sizeof(buffer));
+		strncpy(buffer, &inPlain[charsWritten], sizeof(buffer)-1);
+		charsWritten += send(socketFD, buffer, strlen(buffer), 0);
+	} while(charsWritten < strlen(inPlain));	// Repeat until all data is sent
+
+	// Receive confirm to stay in sync
+	recv(socketFD, buffer, sizeof(buffer)-1, 0);
+
+	// Send Key
+	charsWritten = 0;
+	do {
+		memset(buffer, '\0', sizeof(buffer));
+		strncpy(buffer, &inKey[charsWritten], sizeof(buffer)-1);
+		charsWritten += send(socketFD, buffer, strlen(buffer), 0);
+	} while(charsWritten < strlen(inKey));
+
+	memset(buffer, '\0', sizeof(buffer));
+	recv(socketFD, buffer, sizeof(buffer)-1, 0);
+	printf("CLIENT: from server: %s\n", buffer);
+
+
+/* demo data
 	// send message
 	charsWritten = send(socketFD, buffer, strlen(buffer), 0);
 	if (charsWritten < 0) error("ERROR writing to socket");
@@ -96,7 +132,7 @@ int main(int argc, char *argv[]) {
 
 	close(socketFD);
 
-// end demo data
+end demo data	*/
 
 
 

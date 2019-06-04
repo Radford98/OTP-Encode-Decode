@@ -21,9 +21,11 @@ void error(const char *msg) {perror(msg); exit(1); }	// Error functions for repo
 
 int main (int argc, char *argv[]) {
 	// Variables for server handling
-	int listenSocketFD, estConnFD, portNumber, charsRead;
+	int listenSocketFD, estConnFD, portNumber, charsRead, charsWritten;
 	socklen_t sizeOfClientInfo;
 	char buffer[256];
+	char completePlain[70000];	// Must be large enough for plaintext4
+	char completeKey[70000];
 	struct sockaddr_in serverAddress, clientAddress;
 
 	// Variables for managing children
@@ -86,7 +88,43 @@ int main (int argc, char *argv[]) {
 				break;
 			case 0:		// Child (encrypting) process
 
-// demo data
+				// Verify connection
+				memset(buffer, '\0', 256);
+				// First message should be small enough that it shouldn't be split up
+				charsRead = recv(estConnFD, buffer, 255, 0);
+				if (charsRead <0) error("ERROR reading from socket");
+				if (strcmp(buffer, "secret") != 0) {	// Reject connection
+					charsWritten = send(estConnFD, "reject", 6, 0);
+					close(estConnFD);
+					exit(0);
+				}
+				charsWritten = send(estConnFD, "confirm", 7, 0);
+
+				// Receive plaintext
+				memset(completePlain, '\0', sizeof(completePlain));
+				while (strstr(completePlain, "@@") == NULL) {
+					memset(buffer, '\0', sizeof(buffer));		// Clear buffer
+					charsRead = recv(estConnFD, buffer, 255, 0);	// Grab chunk of text
+					strcat(completePlain, buffer);			// Build message	
+				}
+
+				// Send confirm to stay in sync
+				send(estConnFD, "confirm", 7, 0);
+
+				// Receive key
+				memset(completeKey, '\0', sizeof(completeKey));
+				while (strstr(completeKey, "@@") == NULL) {
+					memset(buffer, '\0', sizeof(buffer));
+					charsRead = recv(estConnFD, buffer, 255, 0);
+					strcat(completeKey, buffer);
+				}
+
+				send(estConnFD, "all data received", 17, 0);
+				printf("SERVER: Plaintext: %d bytes\nKey: %d byte\n", strlen(completePlain), strlen(completeKey));
+				
+
+
+/* demo data
 				printf("SERVER: Connected to Client at port %d\n", ntohs(clientAddress.sin_port));
 				// Get the message from the client and display it
 				memset(buffer, '\0', 256);
@@ -98,7 +136,7 @@ int main (int argc, char *argv[]) {
 				charsRead = send(estConnFD, "I am the server, and I got your message", 39, 0);
 				if (charsRead <0) error("ERROR writing to socket");
 				close(estConnFD);	// Close the existing socket which is connected
-// end demo data
+ end demo data	*/
 				exit(0);
 
 			default:	// Parent (listening) process
