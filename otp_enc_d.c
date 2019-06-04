@@ -24,8 +24,8 @@ int main (int argc, char *argv[]) {
 	int listenSocketFD, estConnFD, portNumber, charsRead, charsWritten;
 	socklen_t sizeOfClientInfo;
 	char buffer[256];
-	char completePlain[70000];	// Must be large enough for plaintext4
-	char completeKey[70000];
+	char completePlain[70500];	// Must be large enough for plaintext4
+	char completeKey[70500];
 	struct sockaddr_in serverAddress, clientAddress;
 
 	// Variables for managing children

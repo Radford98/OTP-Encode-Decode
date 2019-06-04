@@ -13,7 +13,7 @@ int main (int argc, char *argv[]) {
 	srand(time(0));		// Randomize seed
 	int	keylength, i,	// Length of key and loop counter
 		ascii;		// Holder for randomized ASCII character
-	char key[70001];	// Buffer for generated key
+	char key[70500];	// Buffer for generated key
 	memset(key, '\0', sizeof(key));
 	
 	// Verify use as "keygen keylength"
