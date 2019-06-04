@@ -1,8 +1,8 @@
 /* Author: Brad Powell
  * Date: 6/3/2019
- * One Time Pad Encoder
- * Usage: otp_enc plaintext key port
- * This program connects to the encoder daemon at 'port', sends it 'plaintext' and 'key', and prints
+ * One Time Pad Decoder
+ * Usage: otp_decc ciphertext key port
+ * This program connects to the decoder daemon at 'port', sends it 'ciphertext' and 'key', and prints
  * out the received ciphertext to stdout.
  */
 
@@ -25,34 +25,34 @@ int main(int argc, char *argv[]) {
 	char buffer[256];
 
 	// Variables for string processing
-	char* inPlain = NULL;
+	char* inCipher = NULL;
 	char* inKey = NULL;
 	size_t inputSize = 0;
-	int numPlain, numKey;
+	int numCipher, numKey;
 	int i;
 
-	if (argc != 4) { fprintf(stderr, "USAGE: %s plaintext key port\n", argv[0]); exit(1); } // Check usage/args
+	if (argc != 4) { fprintf(stderr, "USAGE: %s ciphertext key port\n", argv[0]); exit(1); } // Check usage/args
 
 /************** String retrieval ************************/
 	FILE* fp = fopen(argv[1], "r");
-	numPlain = getline(&inPlain, &inputSize, fp);	// Read plaintext file
+	numCipher = getline(&inCipher, &inputSize, fp);	// Read ciphertext file
 	fclose(fp);
 	// Check for bad characters. Goes to charsRead-1 to ignore newline.
-	for (i = 0; i < numPlain-1; i++){
-		if ((inPlain[i] < 65 || inPlain[i] > 90) && inPlain[i] != 32) {
-			error("Bad character in plaintext");
+	for (i = 0; i < numCipher-1; i++){
+		if ((inCipher[i] < 65 || inCipher[i] > 90) && inCipher[i] != 32) {
+			error("Bad character in ciphertext");
 		}
 	}
 	// Modify the text to have @@ as a terminator
-	inPlain[numPlain-1] = '@';
-	inPlain[numPlain] = '@';
-	inPlain[numPlain+1] = '\0';
+	inCipher[numCipher-1] = '@';
+	inCipher[numCipher] = '@';
+	inCipher[numCipher+1] = '\0';
 
 	// Repeat for key
 	fp = fopen(argv[2], "r");
 	numKey = getline(&inKey, &inputSize, fp);
 	fclose(fp);
-	if (numPlain > numKey) error("ERROR: plaintext longer than key");	// Verify longer key than text
+	if (numCipher > numKey) error("ERROR: ciphertext longer than key");	// Verify longer key than text
 	for (i = 0; i < numKey-1; i++) {
 		if ((inKey[i] < 65 || inKey[i] > 90) && inKey[i] != 32) {
 			error("Bad character in key");
@@ -61,7 +61,6 @@ int main(int argc, char *argv[]) {
 	inKey[numKey-1] = '@';
 	inKey[numKey] = '@';
 	inKey[numKey+1] = '\0';
-
 
 /************** Network Connection **********************/
 
@@ -83,24 +82,24 @@ int main(int argc, char *argv[]) {
 		error("ERROR connecting");
 
 /*************** Verify connection to correct server ********/
-	charsWritten = send(socketFD, "secret", 6, 0);
+	charsWritten = send(socketFD, "message", 7, 0);
 	memset(buffer, '\0', sizeof(buffer));
 	charsRead = recv(socketFD, buffer, sizeof(buffer)-1, 0);
 	if (strcmp(buffer, "confirm") != 0) error ("ERROR connected to wrong server");
 
 
-/**************** Send plaintext and key ********************/
-	// Send plaintext
+/**************** Send ciphertext and key ********************/
+	// Send ciphertext
 	charsWritten = 0;	// Set to 0 before loop
 	do {
 		// Send the remaining data (or try to send all of it if first go through).
-		// &inPlain[charsWritten] gives us the address of the remaining string - either
-		// &inPlain[0] to begin, or wherever it stopped if it go interrupted.
+		// &inCipher[charsWritten] gives us the address of the remaining string - either
+		// &inCipher[0] to begin, or wherever it stopped if it go interrupted.
 		// Only sends the size of the buffer each time, so larger messages are broken up.
 		memset(buffer, '\0', sizeof(buffer));
-		strncpy(buffer, &inPlain[charsWritten], sizeof(buffer)-1);
+		strncpy(buffer, &inCipher[charsWritten], sizeof(buffer)-1);
 		charsWritten += send(socketFD, buffer, strlen(buffer), 0);
-	} while(charsWritten < strlen(inPlain));	// Repeat until all data is sent
+	} while(charsWritten < strlen(inCipher));	// Repeat until all data is sent
 
 	// Receive confirm to stay in sync
 	recv(socketFD, buffer, sizeof(buffer)-1, 0);
@@ -113,19 +112,19 @@ int main(int argc, char *argv[]) {
 		charsWritten += send(socketFD, buffer, strlen(buffer), 0);
 	} while(charsWritten < strlen(inKey));
 
-	// Receive cipher; Uses 'inPlain' string because we know it's already large enough to hold the cipher.
-	memset(inPlain, '\0', sizeof(inPlain));
-	while (strstr(inPlain, "@@") == NULL) {
+	// Receive cipher; Uses 'inCipher' string because we know it's already large enough to hold the cipher.
+	memset(inCipher, '\0', sizeof(inCipher));
+	while (strstr(inCipher, "@@") == NULL) {
 		memset(buffer, '\0', sizeof(buffer));
 		recv(socketFD, buffer, sizeof(buffer)-1, 0);
-		strcat(inPlain, buffer);
+		strcat(inCipher, buffer);
 	}
 
 	// Replace @'s with newline and \0
-	inPlain[numPlain-1] = '\n';
-	inPlain[numPlain] = '\0';
+	inCipher[numCipher-1] = '\n';
+	inCipher[numCipher] = '\0';
 	// Print cipher to stdout
-	fprintf(stdout, inPlain);
+	fprintf(stdout, inCipher);
 
 	close(socketFD);
 

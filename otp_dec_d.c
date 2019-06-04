@@ -1,10 +1,10 @@
 /* Author: Brad Powell
- * Date: 6/3/2019
- * otp_enc_d: One Time Pad Encode Daemon
- * Use: otp_enc_d listening_port
- * Sets up a 'server' that listens for otp_enc in order to encode its message.
- * The children processes set up by the server will accept the plaintext and key from otp_enc through
- * communication sockets and writes back the ciphertext.
+ * Date: 6/4/2019
+ * otp_dec_d: One Time Pad Decode Daemon
+ * Use: otp_dec_d listening_port
+ * Sets up a 'server' that listens for otp_dec in order to decode its message.
+ * The children processes set up by the server will accept the ciphertext and key from otp_dec through
+ * communication sockets and writes back the plaintext.
  */
 
 #include <stdio.h>
@@ -24,7 +24,7 @@ int main (int argc, char *argv[]) {
 	int listenSocketFD, estConnFD, portNumber, charsRead, charsWritten;
 	socklen_t sizeOfClientInfo;
 	char buffer[256];
-	char completePlain[70500];	// Must be large enough for plaintext4
+	char completeCipher[70500];	// Must be large enough for ciphertext
 	char completeKey[70500];
 	struct sockaddr_in serverAddress, clientAddress;
 
@@ -86,26 +86,26 @@ int main (int argc, char *argv[]) {
 			case -1:
 				fprintf(stderr, "ERROR fork failed\n");
 				break;
-			case 0:		// Child (encrypting) process
+			case 0:		// Child (decrypting) process
 
 				// Verify connection
 				memset(buffer, '\0', 256);
 				// First message should be small enough that it shouldn't be split up
 				charsRead = recv(estConnFD, buffer, 255, 0);
 				if (charsRead <0) error("ERROR reading from socket");
-				if (strcmp(buffer, "secret") != 0) {	// Reject connection
+				if (strcmp(buffer, "message") != 0) {	// Reject connection
 					charsWritten = send(estConnFD, "reject", 6, 0);
 					close(estConnFD);
 					exit(0);
 				}
 				charsWritten = send(estConnFD, "confirm", 7, 0);
 
-				// Receive plaintext
-				memset(completePlain, '\0', sizeof(completePlain));
-				while (strstr(completePlain, "@@") == NULL) {
+				// Receive ciphertext
+				memset(completeCipher, '\0', sizeof(completeCipher));
+				while (strstr(completeCipher, "@@") == NULL) {
 					memset(buffer, '\0', sizeof(buffer));		// Clear buffer
 					charsRead = recv(estConnFD, buffer, 255, 0);	// Grab chunk of text
-					strcat(completePlain, buffer);			// Build message	
+					strcat(completeCipher, buffer);			// Build message	
 				}
 
 				// Send confirm to stay in sync
@@ -119,19 +119,19 @@ int main (int argc, char *argv[]) {
 					strcat(completeKey, buffer);
 				}
 
-				// Create cipher, using completePlain to store the result since we know
+				// Decode cipher, using completeCipher to store the result since we know
 				// it's big enough.
-				// Cipher is created character-by-character. First, it converts spaces to [
-				// (91) for math purposes. It then converts both plaintext and key to our
-				// base number (0-26). It adds those together, mods them by 27, converts
-				// back to uppercase, and stores that in completePlain.
-				// After, it converts ] to spaces.
+				// Plaintext is created character-by-character. First it converts spaces to [
+				// for math purposes. It then uses the OTP conversion process: subtract the
+				// key from the cipher, add 27 to get around negatives,
+				// mod by 27, then converts to uppercase chars again.
+				// Converts [ back into spaces.
 				// It leaves the @@ at the end for sending back.
-				for (i = 0; i < strlen(completePlain)-2; i++) {
-					if (completePlain[i] == 32) completePlain[i] = 91;
+				for (i = 0; i < strlen(completeCipher)-2; i++) {
+					if (completeCipher[i] == 32) completeCipher[i] = 91;
 					if (completeKey[i] == 32) completeKey[i] = 91;
-					completePlain[i] = ((completePlain[i]-65+completeKey[i]-65) % 27) + 65;
-					if (completePlain[i] == 91) completePlain[i] = 32;
+					completeCipher[i] = ((completeCipher[i]-completeKey[i]+27) % 27) + 65;
+					if (completeCipher[i] == 91) completeCipher[i] = 32;
 				}
 
 				// Send cipher back, breaking up the complete message to buffer-sized chunks,
@@ -139,14 +139,13 @@ int main (int argc, char *argv[]) {
 				charsWritten = 0;
 				do {
 					memset(buffer, '\0', sizeof(buffer));
-					strncpy(buffer, &completePlain[charsWritten], sizeof(buffer)-1);
+					strncpy(buffer, &completeCipher[charsWritten], sizeof(buffer)-1);
 					charsWritten += send(estConnFD, buffer, strlen(buffer), 0);
-				} while (charsWritten < strlen(completePlain));
+				} while (charsWritten < strlen(completeCipher));
 
 				// Now that the cipher is sent, connection can be closed and child offers
 				// itself up for reaping.
 				close(estConnFD);
-
 
 				exit(0);
 
